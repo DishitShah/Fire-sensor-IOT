@@ -116,6 +116,37 @@
 
         .connected { color: var(--safe-green); }
         .disconnected { color: var(--fire-red); }
+
+        .settings-panel {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px auto;
+            max-width: 500px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .settings-panel input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+
+        .settings-panel button {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--safe-green);
+            color: white;
+            cursor: pointer;
+        }
+
+        .settings-panel button:hover {
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body>
@@ -129,6 +160,12 @@
     <div class="container">
         <h1>🌲 Forest Fire Detector 🔥</h1>
         
+        <div class="settings-panel">
+            <h3>WebSocket Connection Settings</h3>
+            <input type="text" id="websocket-url" placeholder="WebSocket URL (ws://...)">
+            <button onclick="connectToCustomWebSocket()">Connect</button>
+        </div>
+
         <div id="fire-notification" class="alert">
             <h2>🚨 FIRE ALERT! 🚨</h2>
             <p>Fire detected on fire sensor 1! Immediate action required!</p>
@@ -139,18 +176,18 @@
             <p>Emergency assistance requested! Please respond immediately!</p>
         </div>
 
-        <div id="connection-status">Connecting to WebSocket...</div>
+        <div id="connection-status">Please enter WebSocket URL to connect</div>
 
         <div id="chart-container">
             <canvas id="gaugeChart"></canvas>
         </div>
 
         <audio id="fireAlarm" loop>
-            <source src="loud-buzzer-100567.mp3" type="audio/mpeg">
+            <source src="buzzer-227217.mp3" type="audio/mpeg">
         </audio>
         
         <audio id="sosAlarm" loop>
-            <source src="buzzer-227217.mp3" type="audio/mpeg">
+            <source src="buzzer-4-183895.mp3" type="audio/mpeg">
         </audio>
 
         <button id="testSound" style="margin-top: 20px; padding: 10px;">Test Alarm Sound</button>
@@ -159,11 +196,20 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         let gaugeChart;
-        const WEBSOCKET_URL = 'ws://192.168.137.11:81';
+        let currentSocket = null;
         const fireAlarm = document.getElementById('fireAlarm');
         const sosAlarm = document.getElementById('sosAlarm');
         let isFireAlarmPlaying = false;
         let isSosAlarmPlaying = false;
+
+        // Load last used WebSocket URL from localStorage
+        window.onload = () => {
+            initChart();
+            const lastUsedUrl = localStorage.getItem('lastWebSocketUrl');
+            if (lastUsedUrl) {
+                document.getElementById('websocket-url').value = lastUsedUrl;
+            }
+        };
 
         class AlarmManager {
             constructor(audioElement) {
@@ -264,16 +310,33 @@
             }
         }
 
-        function connectWebSocket() {
-            const connectionStatus = document.getElementById('connection-status');
-            const socket = new WebSocket(WEBSOCKET_URL);
+        function connectToCustomWebSocket() {
+            const urlInput = document.getElementById('websocket-url');
+            const url = urlInput.value.trim();
             
-            socket.onopen = () => {
+            if (!url) {
+                alert('Please enter a WebSocket URL');
+                return;
+            }
+
+            // Save URL to localStorage
+            localStorage.setItem('lastWebSocketUrl', url);
+
+            // Close existing connection if any
+            if (currentSocket) {
+                currentSocket.close();
+            }
+
+            const connectionStatus = document.getElementById('connection-status');
+            currentSocket = new WebSocket(url);
+            
+            currentSocket.onopen = () => {
                 connectionStatus.textContent = 'WebSocket Connected';
                 connectionStatus.classList.add('connected');
+                connectionStatus.classList.remove('disconnected');
             };
 
-            socket.onmessage = (event) => {
+            currentSocket.onmessage = (event) => {
                 console.log('Received data:', event.data);
                 
                 switch(event.data) {
@@ -294,16 +357,17 @@
                 }
             };
 
-            socket.onerror = (error) => {
+            currentSocket.onerror = (error) => {
                 console.error('WebSocket Error:', error);
                 connectionStatus.textContent = 'Connection Error';
                 connectionStatus.classList.add('disconnected');
+                connectionStatus.classList.remove('connected');
             };
 
-            socket.onclose = () => {
-                connectionStatus.textContent = 'Disconnected. Reconnecting...';
+            currentSocket.onclose = () => {
+                connectionStatus.textContent = 'Disconnected';
                 connectionStatus.classList.remove('connected');
-                setTimeout(connectWebSocket, 3000);
+                connectionStatus.classList.add('disconnected');
             };
         }
 
@@ -314,11 +378,6 @@
                 sosAlarmManager.stop();
             }
         });
-
-        window.onload = () => {
-            initChart();
-            connectWebSocket();
-        };
     </script>
 </body>
 </html>
