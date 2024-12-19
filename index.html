@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISP131 Forest Fire Detector</title>
+    <style>
+        :root {
+            --safe-green: #4caf50;
+            --fire-red: #f44336;
+            --sos-orange: #ff9800;
+            --background-gray: #f4f4f4;
+            --text-dark: #333;
+            --au-maroon: #8B0000;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: var(--background-gray);
+            color: var(--text-dark);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .navbar {
+            background-color: white;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo {
+            height: 100px;
+        }
+
+        .course-info {
+            color: var(--au-maroon);
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+            margin: 2rem auto;
+            padding: 0 20px;
+        }
+
+        h1 {
+            color: var(--text-dark);
+            margin: 2rem 0;
+            font-size: 2.5rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .alert {
+            display: none;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            max-width: 500px;
+            margin: 1rem auto;
+            animation: pulse 2s infinite;
+        }
+
+        #fire-notification {
+            background-color: rgba(244, 67, 54, 0.1);
+            border: 2px solid var(--fire-red);
+            color: var(--fire-red);
+        }
+
+        #sos-notification {
+            background-color: rgba(255, 152, 0, 0.1);
+            border: 2px solid var(--sos-orange);
+            color: var(--sos-orange);
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.03); opacity: 0.9; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        #chart-container {
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            max-width: 500px;
+            margin: 2rem auto;
+        }
+
+        #connection-status {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #666;
+            padding: 10px;
+            border-radius: 5px;
+            transition: color 0.3s ease;
+        }
+
+        .connected { color: var(--safe-green); }
+        .disconnected { color: var(--fire-red); }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-left">
+            <img src="image.png" alt="Ahmedabad University Logo" class="logo">
+            <span class="course-info">ISP131: Harnessing Solar Power to Address Real-life Problems</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>🌲 Forest Fire Detector 🔥</h1>
+        
+        <div id="fire-notification" class="alert">
+            <h2>🚨 FIRE ALERT! 🚨</h2>
+            <p>Fire detected on fire sensor 1! Immediate action required!</p>
+        </div>
+
+        <div id="sos-notification" class="alert">
+            <h2>🆘 SOS ALERT! 🆘</h2>
+            <p>Emergency assistance requested! Please respond immediately!</p>
+        </div>
+
+        <div id="connection-status">Connecting to WebSocket...</div>
+
+        <div id="chart-container">
+            <canvas id="gaugeChart"></canvas>
+        </div>
+
+        <audio id="fireAlarm" loop>
+            <source src="loud-buzzer-100567.mp3" type="audio/mpeg">
+        </audio>
+        
+        <audio id="sosAlarm" loop>
+            <source src="buzzer-227217.mp3" type="audio/mpeg">
+        </audio>
+
+        <button id="testSound" style="margin-top: 20px; padding: 10px;">Test Alarm Sound</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let gaugeChart;
+        const WEBSOCKET_URL = 'ws://192.168.137.11:81';
+        const fireAlarm = document.getElementById('fireAlarm');
+        const sosAlarm = document.getElementById('sosAlarm');
+        let isFireAlarmPlaying = false;
+        let isSosAlarmPlaying = false;
+
+        class AlarmManager {
+            constructor(audioElement) {
+                this.audio = audioElement;
+                this.isPlaying = false;
+            }
+
+            async play() {
+                try {
+                    if (!this.isPlaying) {
+                        await this.audio.play();
+                        this.isPlaying = true;
+                    }
+                } catch (error) {
+                    console.error('Error playing alarm:', error);
+                }
+            }
+
+            stop() {
+                this.audio.pause();
+                this.audio.currentTime = 0;
+                this.isPlaying = false;
+            }
+        }
+
+        const fireAlarmManager = new AlarmManager(fireAlarm);
+        const sosAlarmManager = new AlarmManager(sosAlarm);
+
+        document.getElementById('testSound').addEventListener('click', async () => {
+            if (fireAlarmManager.isPlaying) {
+                fireAlarmManager.stop();
+            } else {
+                await fireAlarmManager.play();
+                setTimeout(() => fireAlarmManager.stop(), 30000); // Stop after 30 seconds
+            }
+        });
+
+        function initChart() {
+            const ctx = document.getElementById('gaugeChart').getContext('2d');
+            gaugeChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Safe', 'Fire Detected'],
+                    datasets: [{
+                        data: [1, 0],
+                        backgroundColor: ['#4caf50', '#f44336'],
+                        borderWidth: 0,
+                    }],
+                },
+                options: {
+                    circumference: 180,
+                    rotation: -90,
+                    cutout: '75%',
+                    responsive: true,
+                    plugins: {
+                        tooltip: { enabled: false },
+                        title: {
+                            display: true,
+                            text: 'Flame Sensor Status',
+                            font: { size: 18 }
+                        }
+                    }
+                },
+            });
+        }
+
+        function updateFireStatus(fireDetected) {
+            const fireNotification = document.getElementById('fire-notification');
+            const connectionStatus = document.getElementById('connection-status');
+
+            if (fireDetected) {
+                fireNotification.style.display = 'block';
+                gaugeChart.data.datasets[0].data = [0, 1];
+                connectionStatus.textContent = 'FIRE DETECTED!';
+                connectionStatus.classList.remove('connected');
+                connectionStatus.classList.add('disconnected');
+                fireAlarmManager.play();
+            } else {
+                fireNotification.style.display = 'none';
+                gaugeChart.data.datasets[0].data = [1, 0];
+                connectionStatus.textContent = 'System Connected - No Fire Detected';
+                connectionStatus.classList.remove('disconnected');
+                connectionStatus.classList.add('connected');
+                fireAlarmManager.stop();
+            }
+            gaugeChart.update();
+        }
+
+        function updateSosStatus(sosActive) {
+            const sosNotification = document.getElementById('sos-notification');
+            
+            if (sosActive) {
+                sosNotification.style.display = 'block';
+                sosAlarmManager.play();
+            } else {
+                sosNotification.style.display = 'none';
+                sosAlarmManager.stop();
+            }
+        }
+
+        function connectWebSocket() {
+            const connectionStatus = document.getElementById('connection-status');
+            const socket = new WebSocket(WEBSOCKET_URL);
+            
+            socket.onopen = () => {
+                connectionStatus.textContent = 'WebSocket Connected';
+                connectionStatus.classList.add('connected');
+            };
+
+            socket.onmessage = (event) => {
+                console.log('Received data:', event.data);
+                
+                switch(event.data) {
+                    case 'SOS_ACTIVATED':
+                        updateSosStatus(true);
+                        break;
+                    case 'SOS_DEACTIVATED':
+                        updateSosStatus(false);
+                        break;
+                    case '1':
+                        updateFireStatus(true);
+                        break;
+                    case '0':
+                        updateFireStatus(false);
+                        break;
+                    default:
+                        console.log('Unknown message received:', event.data);
+                }
+            };
+
+            socket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                connectionStatus.textContent = 'Connection Error';
+                connectionStatus.classList.add('disconnected');
+            };
+
+            socket.onclose = () => {
+                connectionStatus.textContent = 'Disconnected. Reconnecting...';
+                connectionStatus.classList.remove('connected');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                fireAlarmManager.stop();
+                sosAlarmManager.stop();
+            }
+        });
+
+        window.onload = () => {
+            initChart();
+            connectWebSocket();
+        };
+    </script>
+</body>
+</html>
